@@ -98,6 +98,18 @@ function appendLongTermContext(prompt: string, context: string): string {
   ].join("\n\n");
 }
 
+function asksForCapabilityOrPolicy(userContent: string): boolean {
+  return /(?:\bwhat can you do\b|capabilities|permissions|sandbox|approval policy|read-?only|memory model|ako funguje .*pam[aä]ť|[čc]o .*vie[šs] robi[ťt]|[čc]o .*m[oô][žz]e[šs])/i.test(
+    userContent
+  );
+}
+
+function looksLikeMetaCapabilityReply(text: string): boolean {
+  return /(?:\bread-?only\b|approval policy|v tejto rel[aá]cii|po[cč]as tejto konverz[aá]cie|nem[oô][žz]em .*zapis|nem[oô][žz]em .*uprav|i can(?:not|'t)? .*write|i can only read|ako funguje moja pam[aä]ť)/i.test(
+    text
+  );
+}
+
 function normalizeTelegramExtension(filePath: string, fallbackExtension: string): string {
   const raw = path.extname(filePath).toLowerCase();
   if (!raw) {
@@ -221,6 +233,28 @@ async function buildPayload(bot: Bot, ctx: Context): Promise<MessagePayload> {
   return { prompt, userContent, imagePaths, cleanupTargets };
 }
 
+async function runFocusedRetry(
+  payload: MessagePayload,
+  sessionId: string | undefined
+): Promise<{ reply: string; sessionId?: string }> {
+  const retryPrompt = [
+    "Rewrite your previous response.",
+    "Strict rules:",
+    "- Do NOT discuss your capabilities, sandbox, approval policy, or memory model.",
+    "- Answer only the user's request directly.",
+    "- Keep it practical and concise.",
+    "- Reply in Slovak unless explicitly asked otherwise.",
+    "",
+    `User request:\n${payload.userContent}`
+  ].join("\n");
+
+  return runCodexTurn({
+    prompt: retryPrompt,
+    sessionId,
+    imagePaths: payload.imagePaths
+  });
+}
+
 async function cleanupTargets(pathsToRemove: string[]): Promise<void> {
   await Promise.all(
     pathsToRemove.map(async (target) => {
@@ -340,19 +374,34 @@ export function createRelayBot(): Bot {
           imagePaths: payload.imagePaths
         });
 
-        if (result.sessionId) {
-          await sessions.set(chatId, result.sessionId);
+        let activeSessionId = result.sessionId ?? priorSessionId;
+        if (activeSessionId) {
+          await sessions.set(chatId, activeSessionId);
         }
 
-        const processedReply = await processMemoryIntents(result.reply);
-        const outgoingReply = processedReply || result.reply || "Codex completed but returned an empty message.";
+        let processedReply = await processMemoryIntents(result.reply);
+        let outgoingReply = processedReply || result.reply || "Codex completed but returned an empty message.";
+
+        if (looksLikeMetaCapabilityReply(outgoingReply) && !asksForCapabilityOrPolicy(payload.userContent)) {
+          const retry = await runFocusedRetry(payload, activeSessionId);
+          activeSessionId = retry.sessionId ?? activeSessionId;
+          if (activeSessionId) {
+            await sessions.set(chatId, activeSessionId);
+          }
+
+          processedReply = await processMemoryIntents(retry.reply);
+          const retriedReply = processedReply || retry.reply;
+          if (retriedReply.trim()) {
+            outgoingReply = retriedReply;
+          }
+        }
 
         await saveChatMessage({
           chatId,
           role: "assistant",
           content: outgoingReply,
           metadata: {
-            session_id: result.sessionId ?? priorSessionId ?? null
+            session_id: activeSessionId ?? null
           }
         });
 
