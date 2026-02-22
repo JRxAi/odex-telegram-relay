@@ -262,6 +262,11 @@ export function createRelayBot(): Bot {
       return;
     }
 
+    const rawText = (ctx.message as Record<string, unknown> | undefined)?.text;
+    if (typeof rawText === "string" && rawText.startsWith("/")) {
+      return;
+    }
+
     const chatId = ctx.chat?.id;
     if (typeof chatId !== "number") {
       return;
