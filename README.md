@@ -8,6 +8,7 @@ Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Cla
 - Keeps per-chat Codex sessions via `codex exec resume`.
 - Supports image attachments (`--image` passed to Codex).
 - Supports voice/audio by transcribing first (optional, via Groq API).
+- Supports optional long-term memory via Supabase (`messages` + `memory` tables).
 - Includes chat allowlist support.
 
 ## How it works
@@ -17,9 +18,10 @@ Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Cla
    - text/caption is used directly
    - image is downloaded and passed via `--image`
    - voice/audio is transcribed via Groq (if enabled)
-3. Relay executes `codex exec` (or `codex exec resume` when session exists).
-4. Relay sends assistant response back to Telegram (chunked to max length).
-5. Session ID is stored per chat in `SESSIONS_FILE`.
+3. Relay optionally loads long-term context from Supabase (if configured).
+4. Relay executes `codex exec` (or `codex exec resume` when session exists).
+5. Relay sends assistant response back to Telegram (chunked to max length).
+6. Session ID is stored per chat in `SESSIONS_FILE`.
 
 ## Requirements
 
@@ -56,6 +58,9 @@ Optional:
 
 - `CODEX_MODEL`
 - `SYSTEM_PROMPT`
+- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (long-term memory)
+- `SUPABASE_RECENT_MESSAGES`, `SUPABASE_CONTEXT_MAX_CHARS` (context budget)
+- `SUPABASE_ENABLE_SEMANTIC_SEARCH`, `SUPABASE_SEMANTIC_MATCHES` (Edge Function search)
 - `GROQ_API_KEY` + `TRANSCRIPTION_MODEL` (for voice/audio)
 - `GROQ_BASE_URL` (override Groq-compatible endpoint if needed)
 - `MAX_REPLY_CHARS` (200..4096, default 3800)
@@ -73,6 +78,21 @@ Optional:
 - Voice/audio transcription requires `GROQ_API_KEY`; otherwise voice/audio requests fail with a clear error.
 - Supported media inputs: `photo`, `image/*` document, `voice`, `audio`.
 - Session state is persisted to `SESSIONS_FILE` (default `.data/sessions.json`).
+- Supabase memory is optional; when not configured, relay still works with local session resume.
+
+## Supabase setup (optional)
+
+1. In Supabase SQL editor, run:
+   - `deploy/supabase/schema.sql`
+2. In `.env`, set:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_ANON_KEY` if your RLS policies allow it)
+3. Restart the relay.
+
+Note:
+
+- Semantic memory search uses a Supabase Edge Function named `search`.
+- If `search` is not deployed, relay silently falls back to recent chat history + facts/goals.
 
 ## Build for production
 
@@ -129,6 +149,8 @@ journalctl -u odex-telegram-relay -f
   - Set `CODEX_BIN` to absolute path of `codex` binary.
 - Voice message fails with missing key
   - Set `GROQ_API_KEY` in `.env`.
+- Supabase warnings in logs
+  - Run `deploy/supabase/schema.sql` and verify `SUPABASE_URL` / key values.
 
 ## Security notes
 

@@ -47,6 +47,29 @@ function parseMaxReplyChars(raw: string | undefined): number {
   return Math.floor(parsed);
 }
 
+function parseBoundedInt(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
+function parseBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (!raw) {
+    return fallback;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  return fallback;
+}
+
 export type RelayConfig = {
   telegramBotToken: string;
   allowedChatIds: Set<number>;
@@ -60,6 +83,12 @@ export type RelayConfig = {
   groqApiKey?: string;
   groqBaseUrl: string;
   transcriptionModel: string;
+  supabaseUrl?: string;
+  supabaseKey?: string;
+  supabaseRecentMessages: number;
+  supabaseSemanticMatches: number;
+  supabaseEnableSemanticSearch: boolean;
+  supabaseContextMaxChars: number;
 };
 
 export const relayConfig: RelayConfig = {
@@ -74,5 +103,11 @@ export const relayConfig: RelayConfig = {
   maxReplyChars: parseMaxReplyChars(optional("MAX_REPLY_CHARS")),
   groqApiKey: optional("GROQ_API_KEY") ?? optional("OPENAI_API_KEY"),
   groqBaseUrl: optional("GROQ_BASE_URL") ?? "https://api.groq.com/openai/v1",
-  transcriptionModel: optional("TRANSCRIPTION_MODEL") ?? "whisper-large-v3-turbo"
+  transcriptionModel: optional("TRANSCRIPTION_MODEL") ?? "whisper-large-v3-turbo",
+  supabaseUrl: optional("SUPABASE_URL"),
+  supabaseKey: optional("SUPABASE_SERVICE_ROLE_KEY") ?? optional("SUPABASE_ANON_KEY"),
+  supabaseRecentMessages: parseBoundedInt(optional("SUPABASE_RECENT_MESSAGES"), 8, 1, 40),
+  supabaseSemanticMatches: parseBoundedInt(optional("SUPABASE_SEMANTIC_MATCHES"), 5, 1, 20),
+  supabaseEnableSemanticSearch: parseBoolean(optional("SUPABASE_ENABLE_SEMANTIC_SEARCH"), true),
+  supabaseContextMaxChars: parseBoundedInt(optional("SUPABASE_CONTEXT_MAX_CHARS"), 3200, 500, 12000)
 };

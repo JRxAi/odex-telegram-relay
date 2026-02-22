@@ -8,9 +8,16 @@ import OpenAI from "openai";
 import { relayConfig } from "./config.js";
 import { runCodexTurn } from "./codex-runner.js";
 import { SessionStore } from "./session-store.js";
+import {
+  buildSupabasePromptContext,
+  isSupabaseEnabled,
+  processMemoryIntents,
+  saveChatMessage
+} from "./supabase-memory.js";
 
 type MessagePayload = {
   prompt: string;
+  userContent: string;
   imagePaths: string[];
   cleanupTargets: string[];
 };
@@ -78,6 +85,19 @@ async function sendResponse(ctx: Context, text: string): Promise<void> {
   }
 }
 
+function appendLongTermContext(prompt: string, context: string): string {
+  const trimmedContext = context.trim();
+  if (!trimmedContext) {
+    return prompt;
+  }
+
+  return [
+    prompt.trim(),
+    "Long-term memory context from previous chats (optional reference):",
+    trimmedContext
+  ].join("\n\n");
+}
+
 function normalizeTelegramExtension(filePath: string, fallbackExtension: string): string {
   const raw = path.extname(filePath).toLowerCase();
   if (!raw) {
@@ -139,11 +159,11 @@ async function buildPayload(bot: Bot, ctx: Context): Promise<MessagePayload> {
 
   const cleanupTargets: string[] = [];
   const imagePaths: string[] = [];
-  const promptParts: string[] = [];
+  const userPromptParts: string[] = [];
 
   const text = typeof msg.text === "string" ? msg.text : typeof msg.caption === "string" ? msg.caption : "";
   if (text.trim()) {
-    promptParts.push(text.trim());
+    userPromptParts.push(text.trim());
   }
 
   const photos = Array.isArray(msg.photo) ? (msg.photo as Array<{ file_id: string }>) : [];
@@ -154,7 +174,7 @@ async function buildPayload(bot: Bot, ctx: Context): Promise<MessagePayload> {
     cleanupTargets.push(path.dirname(localPath));
 
     if (!text.trim()) {
-      promptParts.push("Analyze the attached image.");
+      userPromptParts.push("Analyze the attached image.");
     }
   }
 
@@ -165,7 +185,7 @@ async function buildPayload(bot: Bot, ctx: Context): Promise<MessagePayload> {
     cleanupTargets.push(path.dirname(localPath));
 
     if (!text.trim()) {
-      promptParts.push("Analyze the attached image document.");
+      userPromptParts.push("Analyze the attached image document.");
     }
   }
 
@@ -174,7 +194,7 @@ async function buildPayload(bot: Bot, ctx: Context): Promise<MessagePayload> {
     const localPath = await downloadTelegramFile(bot, voice.file_id, "ogg");
     cleanupTargets.push(path.dirname(localPath));
     const transcription = await transcribeAudio(localPath);
-    promptParts.push(`Voice transcript:\n${transcription}`);
+    userPromptParts.push(`Voice transcript:\n${transcription}`);
   }
 
   const audio = msg.audio as { file_id?: string } | undefined;
@@ -182,19 +202,23 @@ async function buildPayload(bot: Bot, ctx: Context): Promise<MessagePayload> {
     const localPath = await downloadTelegramFile(bot, audio.file_id, "mp3");
     cleanupTargets.push(path.dirname(localPath));
     const transcription = await transcribeAudio(localPath);
-    promptParts.push(`Audio transcript:\n${transcription}`);
+    userPromptParts.push(`Audio transcript:\n${transcription}`);
   }
 
-  if (relayConfig.systemPrompt) {
-    promptParts.unshift(`System instructions:\n${relayConfig.systemPrompt}`);
-  }
-
-  const prompt = promptParts.join("\n\n").trim();
-  if (!prompt) {
+  const userContent = userPromptParts.join("\n\n").trim();
+  if (!userContent) {
     throw new Error("Send text, image, or voice message.");
   }
 
-  return { prompt, imagePaths, cleanupTargets };
+  const promptParts = relayConfig.systemPrompt
+    ? [`System instructions:\n${relayConfig.systemPrompt}`, userContent]
+    : [userContent];
+  const prompt = promptParts.join("\n\n").trim();
+  if (!prompt) {
+    throw new Error("Prompt assembly failed.");
+  }
+
+  return { prompt, userContent, imagePaths, cleanupTargets };
 }
 
 async function cleanupTargets(pathsToRemove: string[]): Promise<void> {
@@ -232,6 +256,7 @@ export function createRelayBot(): Bot {
     await ctx.reply(
       [
         "Codex Telegram Relay is running.",
+        `Memory backend: ${isSupabaseEnabled() ? "Supabase" : "local sessions only"}`,
         "",
         "Commands:",
         "/new - reset Codex conversation for this chat",
@@ -298,9 +323,19 @@ export function createRelayBot(): Bot {
         const payload = await buildPayload(bot, ctx);
         cleanup = payload.cleanupTargets;
 
+        await saveChatMessage({
+          chatId,
+          role: "user",
+          content: payload.userContent,
+          metadata: {
+            has_images: payload.imagePaths.length > 0
+          }
+        });
+
         const priorSessionId = await sessions.get(chatId);
+        const memoryContext = await buildSupabasePromptContext(chatId, payload.userContent);
         const result = await runCodexTurn({
-          prompt: payload.prompt,
+          prompt: appendLongTermContext(payload.prompt, memoryContext),
           sessionId: priorSessionId,
           imagePaths: payload.imagePaths
         });
@@ -309,7 +344,19 @@ export function createRelayBot(): Bot {
           await sessions.set(chatId, result.sessionId);
         }
 
-        await sendResponse(ctx, result.reply);
+        const processedReply = await processMemoryIntents(result.reply);
+        const outgoingReply = processedReply || result.reply || "Codex completed but returned an empty message.";
+
+        await saveChatMessage({
+          chatId,
+          role: "assistant",
+          content: outgoingReply,
+          metadata: {
+            session_id: result.sessionId ?? priorSessionId ?? null
+          }
+        });
+
+        await sendResponse(ctx, outgoingReply);
       } catch (error) {
         await ctx.reply(`Error: ${humanError(error)}`);
       } finally {
