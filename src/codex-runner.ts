@@ -26,14 +26,16 @@ type CodexEvent = {
 
 function buildArgs(input: CodexTurnInput, outputFile: string): string[] {
   const resuming = Boolean(input.sessionId);
-  const baseArgs: string[] = resuming ? ["exec", "resume"] : ["exec"];
+  const baseArgs: string[] = ["--sandbox", relayConfig.codexSandbox, "exec"];
+  if (resuming) {
+    baseArgs.push("resume");
+  }
 
   baseArgs.push("--skip-git-repo-check");
   baseArgs.push("--json");
 
   // codex exec supports these flags, but codex exec resume does not.
   if (!resuming) {
-    baseArgs.push("--sandbox", relayConfig.codexSandbox);
     baseArgs.push("--color", "never");
     baseArgs.push("--output-last-message", outputFile);
   }
