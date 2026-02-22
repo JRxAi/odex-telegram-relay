@@ -21,16 +21,22 @@ type CodexEvent = {
   thread_id?: string;
   message?: string;
   error?: { message?: string };
+  item?: { type?: string; text?: string };
 };
 
 function buildArgs(input: CodexTurnInput, outputFile: string): string[] {
-  const baseArgs: string[] = input.sessionId ? ["exec", "resume"] : ["exec"];
+  const resuming = Boolean(input.sessionId);
+  const baseArgs: string[] = resuming ? ["exec", "resume"] : ["exec"];
 
   baseArgs.push("--skip-git-repo-check");
-  baseArgs.push("--sandbox", relayConfig.codexSandbox);
   baseArgs.push("--json");
-  baseArgs.push("--color", "never");
-  baseArgs.push("--output-last-message", outputFile);
+
+  // codex exec supports these flags, but codex exec resume does not.
+  if (!resuming) {
+    baseArgs.push("--sandbox", relayConfig.codexSandbox);
+    baseArgs.push("--color", "never");
+    baseArgs.push("--output-last-message", outputFile);
+  }
 
   if (relayConfig.codexModel) {
     baseArgs.push("--model", relayConfig.codexModel);
@@ -65,6 +71,7 @@ export async function runCodexTurn(input: CodexTurnInput): Promise<CodexTurnResu
   const jsonErrors: string[] = [];
   const stderrLines: string[] = [];
   const stdoutLines: string[] = [];
+  let lastAgentMessage = "";
 
   const consumeLine = (line: string, source: "stdout" | "stderr"): void => {
     const trimmed = line.trim();
@@ -82,6 +89,10 @@ export async function runCodexTurn(input: CodexTurnInput): Promise<CodexTurnResu
       const event = JSON.parse(trimmed) as CodexEvent;
       if (event.type === "thread.started" && typeof event.thread_id === "string") {
         sessionId = event.thread_id;
+      }
+
+      if (event.type === "item.completed" && event.item?.type === "agent_message" && typeof event.item.text === "string") {
+        lastAgentMessage = event.item.text.trim();
       }
 
       if (event.type === "error" && typeof event.message === "string") {
@@ -115,6 +126,10 @@ export async function runCodexTurn(input: CodexTurnInput): Promise<CodexTurnResu
     reply = (await fs.readFile(outputFile, "utf8")).trim();
   } catch {
     reply = "";
+  }
+
+  if (!reply && lastAgentMessage) {
+    reply = lastAgentMessage;
   }
 
   await fs.rm(tempDir, { recursive: true, force: true });

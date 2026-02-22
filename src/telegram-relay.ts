@@ -16,8 +16,8 @@ type MessagePayload = {
 };
 
 const sessions = new SessionStore(relayConfig.sessionsFile);
-const openai = relayConfig.openAiApiKey
-  ? new OpenAI({ apiKey: relayConfig.openAiApiKey })
+const groq = relayConfig.groqApiKey
+  ? new OpenAI({ apiKey: relayConfig.groqApiKey, baseURL: relayConfig.groqBaseUrl })
   : undefined;
 
 const inFlightByChat = new Map<number, Promise<void>>();
@@ -100,11 +100,11 @@ async function downloadTelegramFile(bot: Bot, fileId: string, fallbackExtension:
 }
 
 async function transcribeAudio(localPath: string): Promise<string> {
-  if (!openai) {
-    throw new Error("Voice input requires OPENAI_API_KEY.");
+  if (!groq) {
+    throw new Error("Voice input requires GROQ_API_KEY.");
   }
 
-  const result = await openai.audio.transcriptions.create({
+  const result = await groq.audio.transcriptions.create({
     model: relayConfig.transcriptionModel,
     file: createReadStream(localPath)
   });

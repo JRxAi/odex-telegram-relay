@@ -7,7 +7,7 @@ Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Cla
 - Relays Telegram text messages to Codex.
 - Keeps per-chat Codex sessions via `codex exec resume`.
 - Supports image attachments (`--image` passed to Codex).
-- Supports voice/audio by transcribing first (optional, via OpenAI API).
+- Supports voice/audio by transcribing first (optional, via Groq API).
 - Includes chat allowlist support.
 
 ## Requirements
@@ -15,7 +15,7 @@ Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Cla
 - Node.js 20+
 - Codex CLI installed and authenticated (`codex login`)
 - Telegram bot token from @BotFather
-- Optional for voice/audio: OpenAI API key
+- Optional for voice/audio: Groq API key
 
 ## Quick start
 
@@ -44,7 +44,8 @@ Optional:
 
 - `CODEX_MODEL`
 - `SYSTEM_PROMPT`
-- `OPENAI_API_KEY` + `TRANSCRIPTION_MODEL` (for voice/audio)
+- `GROQ_API_KEY` + `TRANSCRIPTION_MODEL` (for voice/audio)
+- `GROQ_BASE_URL` (override Groq-compatible endpoint if needed)
 
 ## Commands
 

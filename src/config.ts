@@ -57,7 +57,8 @@ export type RelayConfig = {
   sessionsFile: string;
   systemPrompt?: string;
   maxReplyChars: number;
-  openAiApiKey?: string;
+  groqApiKey?: string;
+  groqBaseUrl: string;
   transcriptionModel: string;
 };
 
@@ -71,6 +72,7 @@ export const relayConfig: RelayConfig = {
   sessionsFile: path.resolve(optional("SESSIONS_FILE") ?? ".data/sessions.json"),
   systemPrompt: optional("SYSTEM_PROMPT"),
   maxReplyChars: parseMaxReplyChars(optional("MAX_REPLY_CHARS")),
-  openAiApiKey: optional("OPENAI_API_KEY"),
-  transcriptionModel: optional("TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe"
+  groqApiKey: optional("GROQ_API_KEY") ?? optional("OPENAI_API_KEY"),
+  groqBaseUrl: optional("GROQ_BASE_URL") ?? "https://api.groq.com/openai/v1",
+  transcriptionModel: optional("TRANSCRIPTION_MODEL") ?? "whisper-large-v3-turbo"
 };
