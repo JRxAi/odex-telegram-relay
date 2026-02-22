@@ -10,6 +10,17 @@ Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Cla
 - Supports voice/audio by transcribing first (optional, via Groq API).
 - Includes chat allowlist support.
 
+## How it works
+
+1. User sends a Telegram message (text, image, voice, audio).
+2. Relay normalizes payload:
+   - text/caption is used directly
+   - image is downloaded and passed via `--image`
+   - voice/audio is transcribed via Groq (if enabled)
+3. Relay executes `codex exec` (or `codex exec resume` when session exists).
+4. Relay sends assistant response back to Telegram (chunked to max length).
+5. Session ID is stored per chat in `SESSIONS_FILE`.
+
 ## Requirements
 
 - Node.js 20+
@@ -23,7 +34,8 @@ Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Cla
 ./scripts/setup.sh
 cp .env.example .env
 # edit .env
-npm run dev
+npm run build
+npm run start
 ```
 
 ## Environment
@@ -46,12 +58,21 @@ Optional:
 - `SYSTEM_PROMPT`
 - `GROQ_API_KEY` + `TRANSCRIPTION_MODEL` (for voice/audio)
 - `GROQ_BASE_URL` (override Groq-compatible endpoint if needed)
+- `MAX_REPLY_CHARS` (200..4096, default 3800)
 
 ## Commands
 
 - `/start` show status and commands
 - `/new` or `/reset` reset current Codex session in this chat
 - `/session` show current session id
+
+## Limits and behavior
+
+- Telegram replies are chunked by `MAX_REPLY_CHARS` (default `3800`).
+- One request per chat is processed at a time (in-chat queue).
+- Voice/audio transcription requires `GROQ_API_KEY`; otherwise voice/audio requests fail with a clear error.
+- Supported media inputs: `photo`, `image/*` document, `voice`, `audio`.
+- Session state is persisted to `SESSIONS_FILE` (default `.data/sessions.json`).
 
 ## Build for production
 
@@ -98,8 +119,19 @@ Logs:
 journalctl -u odex-telegram-relay -f
 ```
 
-## Notes
+## Troubleshooting
 
-- This bot executes Codex in non-interactive mode (`codex exec`).
-- Codex process permissions are controlled by `CODEX_SANDBOX`.
-- If Codex CLI cannot reach network/API at runtime, relay calls fail with surfaced errors.
+- `Error: For more information, try '--help'.`
+  - Update to latest code and rebuild. This usually means a CLI flag mismatch in older relay builds.
+- `Network request for 'getMe' failed` or `ENOTFOUND api.telegram.org`
+  - Runtime host cannot resolve/reach Telegram API.
+- `Failed to execute Codex CLI`
+  - Set `CODEX_BIN` to absolute path of `codex` binary.
+- Voice message fails with missing key
+  - Set `GROQ_API_KEY` in `.env`.
+
+## Security notes
+
+- Always set `ALLOWED_CHAT_IDS` so random users cannot call your bot.
+- Run with least privilege sandbox (`CODEX_SANDBOX=workspace-write` by default).
+- Rotate leaked Telegram/Groq tokens immediately.
