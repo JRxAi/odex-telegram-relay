@@ -202,8 +202,8 @@ function humanError(error: unknown): string {
   return "Unknown error while handling your request.";
 }
 
-function unauthorizedMessage(ctx: Context): Promise<void> {
-  return ctx.reply("This bot is restricted. Add your chat ID to ALLOWED_CHAT_IDS.");
+async function unauthorizedMessage(ctx: Context): Promise<void> {
+  await ctx.reply("This bot is restricted. Add your chat ID to ALLOWED_CHAT_IDS.");
 }
 
 export function createRelayBot(): Bot {
@@ -262,7 +262,7 @@ export function createRelayBot(): Bot {
       return;
     }
 
-    const rawText = (ctx.message as Record<string, unknown> | undefined)?.text;
+    const rawText = "text" in ctx.message ? ctx.message.text : undefined;
     if (typeof rawText === "string" && rawText.startsWith("/")) {
       return;
     }

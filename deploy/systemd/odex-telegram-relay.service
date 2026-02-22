@@ -1,0 +1,21 @@
+[Unit]
+Description=Odex Telegram Relay (Codex CLI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=odex
+Group=odex
+WorkingDirectory=/opt/odex-telegram-relay
+EnvironmentFile=/opt/odex-telegram-relay/.env
+ExecStart=/usr/bin/node /opt/odex-telegram-relay/dist/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

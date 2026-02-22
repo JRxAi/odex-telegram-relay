@@ -1,4 +1,4 @@
-# Codex Telegram Relay
+# Odex Telegram Relay
 
 Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Claude Code.
 
@@ -38,6 +38,7 @@ Strongly recommended:
 
 - `ALLOWED_CHAT_IDS` (restrict bot usage)
 - `CODEX_CWD` (folder Codex should work in)
+- `CODEX_BIN` (absolute path in production, for example `/usr/local/bin/codex`)
 
 Optional:
 
@@ -54,36 +55,50 @@ Optional:
 ## Build for production
 
 ```bash
-npm run build
+npm run build:prod
 npm run start
 ```
 
-## Create a completely new GitHub repo
-
-Run inside this folder:
+## 24/7 deploy with PM2
 
 ```bash
-git init
-git add .
-git commit -m "Initial Codex Telegram relay"
-git branch -M main
+npm run build:prod
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup
 ```
 
-If you use GitHub CLI:
+Useful PM2 commands:
 
 ```bash
-gh repo create codex-telegram-relay --public --source=. --remote=origin --push
+pm2 status
+pm2 logs odex-telegram-relay
+pm2 restart odex-telegram-relay
 ```
 
-Or create an empty repo on GitHub web and then:
+## 24/7 deploy with systemd (Linux)
+
+1. Copy project to `/opt/odex-telegram-relay`.
+2. Create `/opt/odex-telegram-relay/.env`.
+3. Run `npm run build:prod` in that folder.
+4. Ensure Codex is logged in for the service user (`sudo -u odex codex login`).
+5. Copy `deploy/systemd/odex-telegram-relay.service` to `/etc/systemd/system/` and adjust user/paths if needed.
+6. Start service:
 
 ```bash
-git remote add origin git@github.com:<your-user>/codex-telegram-relay.git
-git push -u origin main
+sudo systemctl daemon-reload
+sudo systemctl enable --now odex-telegram-relay
+sudo systemctl status odex-telegram-relay
+```
+
+Logs:
+
+```bash
+journalctl -u odex-telegram-relay -f
 ```
 
 ## Notes
 
 - This bot executes Codex in non-interactive mode (`codex exec`).
 - Codex process permissions are controlled by `CODEX_SANDBOX`.
-- If Codex CLI cannot reach network/API at runtime, relay calls will fail with a surfaced error.
+- If Codex CLI cannot reach network/API at runtime, relay calls fail with surfaced errors.
