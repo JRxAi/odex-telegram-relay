@@ -41,6 +41,13 @@ npm run build
 npm run start
 ```
 
+Dashboard (optional, local):
+
+```bash
+npm run dashboard
+# open http://localhost:4243
+```
+
 ## Environment
 
 See `.env.example` for all options.
@@ -59,6 +66,7 @@ Optional:
 
 - `CODEX_MODEL`
 - `SYSTEM_PROMPT`
+- `DASHBOARD_HOST`, `DASHBOARD_PORT` (defaults: `127.0.0.1:4243`)
 - `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (long-term memory)
 - `SUPABASE_RECENT_MESSAGES`, `SUPABASE_CONTEXT_MAX_CHARS` (context budget)
 - `SUPABASE_ENABLE_SEMANTIC_SEARCH`, `SUPABASE_SEMANTIC_MATCHES` (Edge Function search)
@@ -78,6 +86,22 @@ Optional:
 - `/remember <text>` store global note to `memory.md`
 - `/remember chat: <text>` store chat-specific note
 - `/forget <text>` delete matching notes
+
+## Dashboard
+
+- Route: `http://localhost:4243`
+- API: `GET /api/state`
+- Shows:
+  - active chat -> session map
+  - relay/sandbox configuration snapshot
+  - local memory previews (`soul.md`, `memory.md`, chat files)
+  - relay log tail (`.data/relay.log`)
+
+Start dashboard:
+
+```bash
+npm run dashboard
+```
 
 ## Limits and behavior
 

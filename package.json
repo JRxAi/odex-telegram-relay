@@ -7,6 +7,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "dashboard:dev": "tsx src/dashboard.ts",
+    "dashboard": "node dist/dashboard.js",
     "build": "tsc -p tsconfig.json",
     "build:prod": "./scripts/deploy-production.sh",
     "check": "tsc --noEmit",
