@@ -9,6 +9,7 @@ Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Cla
 - Supports image attachments (`--image` passed to Codex).
 - Supports voice/audio by transcribing first (optional, via Groq API).
 - Supports optional long-term memory via Supabase (`messages` + `memory` tables).
+- Supports optional local file memory via `soul.md`, `memory.md`, and per-chat notes.
 - Includes chat allowlist support.
 
 ## How it works
@@ -18,7 +19,7 @@ Telegram bot that relays messages to **Codex CLI** (`codex exec`) instead of Cla
    - text/caption is used directly
    - image is downloaded and passed via `--image`
    - voice/audio is transcribed via Groq (if enabled)
-3. Relay optionally loads long-term context from Supabase (if configured).
+3. Relay optionally loads long-term context from Supabase and local memory files.
 4. Relay executes `codex exec` (or `codex exec resume` when session exists).
 5. Relay sends assistant response back to Telegram (chunked to max length).
 6. Session ID is stored per chat in `SESSIONS_FILE`.
@@ -61,6 +62,8 @@ Optional:
 - `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (long-term memory)
 - `SUPABASE_RECENT_MESSAGES`, `SUPABASE_CONTEXT_MAX_CHARS` (context budget)
 - `SUPABASE_ENABLE_SEMANTIC_SEARCH`, `SUPABASE_SEMANTIC_MATCHES` (Edge Function search)
+- `LOCAL_MEMORY_ENABLED`, `SOUL_FILE`, `MEMORY_FILE`, `CHAT_MEMORY_DIR`
+- `LOCAL_MEMORY_CONTEXT_MAX_CHARS`, `LOCAL_MEMORY_PREVIEW_CHARS`
 - `GROQ_API_KEY` + `TRANSCRIPTION_MODEL` (for voice/audio)
 - `GROQ_BASE_URL` (override Groq-compatible endpoint if needed)
 - `MAX_REPLY_CHARS` (200..4096, default 3800)
@@ -70,6 +73,11 @@ Optional:
 - `/start` show status and commands
 - `/new` or `/reset` reset current Codex session in this chat
 - `/session` show current session id
+- `/memory` show soul/memory previews + file paths
+- `/soul` show soul profile preview
+- `/remember <text>` store global note to `memory.md`
+- `/remember chat: <text>` store chat-specific note
+- `/forget <text>` delete matching notes
 
 ## Limits and behavior
 
@@ -79,6 +87,7 @@ Optional:
 - Supported media inputs: `photo`, `image/*` document, `voice`, `audio`.
 - Session state is persisted to `SESSIONS_FILE` (default `.data/sessions.json`).
 - Supabase memory is optional; when not configured, relay still works with local session resume.
+- Local file memory is optional; when enabled, relay injects `soul.md` and `memory.md` context into prompts.
 
 ## Supabase setup (optional)
 
@@ -93,6 +102,21 @@ Note:
 
 - Semantic memory search uses a Supabase Edge Function named `search`.
 - If `search` is not deployed, relay silently falls back to recent chat history + facts/goals.
+
+## Local file memory setup (optional)
+
+1. Edit:
+   - `soul.md` (assistant identity and behavior)
+   - `memory.md` (durable global notes)
+2. Use commands for runtime updates:
+   - `/remember`, `/forget`, `/memory`, `/soul`
+3. For per-chat notes, relay stores files in `CHAT_MEMORY_DIR` (default `.data/chat-memory`).
+
+Optional reply tags (auto-processed):
+
+- `[MEMORY_ADD: text]`
+- `[CHAT_MEMORY_ADD: text]`
+- `[MEMORY_FORGET: text]`
 
 ## Build for production
 

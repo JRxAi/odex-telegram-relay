@@ -89,6 +89,12 @@ export type RelayConfig = {
   supabaseSemanticMatches: number;
   supabaseEnableSemanticSearch: boolean;
   supabaseContextMaxChars: number;
+  localMemoryEnabled: boolean;
+  soulFile: string;
+  memoryFile: string;
+  chatMemoryDir: string;
+  localMemoryContextMaxChars: number;
+  localMemoryPreviewChars: number;
 };
 
 export const relayConfig: RelayConfig = {
@@ -109,5 +115,11 @@ export const relayConfig: RelayConfig = {
   supabaseRecentMessages: parseBoundedInt(optional("SUPABASE_RECENT_MESSAGES"), 8, 1, 40),
   supabaseSemanticMatches: parseBoundedInt(optional("SUPABASE_SEMANTIC_MATCHES"), 5, 1, 20),
   supabaseEnableSemanticSearch: parseBoolean(optional("SUPABASE_ENABLE_SEMANTIC_SEARCH"), true),
-  supabaseContextMaxChars: parseBoundedInt(optional("SUPABASE_CONTEXT_MAX_CHARS"), 3200, 500, 12000)
+  supabaseContextMaxChars: parseBoundedInt(optional("SUPABASE_CONTEXT_MAX_CHARS"), 3200, 500, 12000),
+  localMemoryEnabled: parseBoolean(optional("LOCAL_MEMORY_ENABLED"), true),
+  soulFile: path.resolve(optional("SOUL_FILE") ?? "soul.md"),
+  memoryFile: path.resolve(optional("MEMORY_FILE") ?? "memory.md"),
+  chatMemoryDir: path.resolve(optional("CHAT_MEMORY_DIR") ?? ".data/chat-memory"),
+  localMemoryContextMaxChars: parseBoundedInt(optional("LOCAL_MEMORY_CONTEXT_MAX_CHARS"), 3200, 500, 12000),
+  localMemoryPreviewChars: parseBoundedInt(optional("LOCAL_MEMORY_PREVIEW_CHARS"), 900, 200, 4000)
 };

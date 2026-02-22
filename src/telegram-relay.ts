@@ -9,6 +9,15 @@ import { relayConfig } from "./config.js";
 import { runCodexTurn } from "./codex-runner.js";
 import { SessionStore } from "./session-store.js";
 import {
+  buildLocalPromptContext,
+  forgetNotes,
+  getMemoryDebugPreview,
+  getSoulPreview,
+  isLocalMemoryEnabled,
+  processLocalMemoryIntents,
+  rememberNote
+} from "./local-memory.js";
+import {
   buildSupabasePromptContext,
   isSupabaseEnabled,
   processMemoryIntents,
@@ -96,6 +105,30 @@ function appendLongTermContext(prompt: string, context: string): string {
     "Long-term memory context from previous chats (optional reference):",
     trimmedContext
   ].join("\n\n");
+}
+
+function mergeContexts(...contexts: string[]): string {
+  return contexts
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .join("\n\n");
+}
+
+function commandArgs(ctx: Context): string {
+  const message = ctx.message;
+  if (!message) {
+    return "";
+  }
+
+  const raw = "text" in message ? message.text : "";
+  if (typeof raw !== "string") {
+    return "";
+  }
+  const firstSpace = raw.indexOf(" ");
+  if (firstSpace === -1) {
+    return "";
+  }
+  return raw.slice(firstSpace + 1).trim();
 }
 
 function asksForCapabilityOrPolicy(userContent: string): boolean {
@@ -290,11 +323,16 @@ export function createRelayBot(): Bot {
     await ctx.reply(
       [
         "Codex Telegram Relay is running.",
-        `Memory backend: ${isSupabaseEnabled() ? "Supabase" : "local sessions only"}`,
+        `Memory backend: ${isSupabaseEnabled() ? "Supabase" : "local sessions only"} + ${isLocalMemoryEnabled() ? "soul/memory files" : "no local files"}`,
         "",
         "Commands:",
         "/new - reset Codex conversation for this chat",
-        "/session - show current Codex session id"
+        "/session - show current Codex session id",
+        "/memory - show soul/memory debug preview",
+        "/soul - show soul profile preview",
+        "/remember <text> - add note to memory.md",
+        "/remember chat: <text> - add note for this chat only",
+        "/forget <text> - remove matching notes"
       ].join("\n")
     );
   });
@@ -327,6 +365,95 @@ export function createRelayBot(): Bot {
 
     const sessionId = await sessions.get(chatId);
     await ctx.reply(sessionId ? `Current session: ${sessionId}` : "No active session yet.");
+  });
+
+  bot.command("memory", async (ctx) => {
+    if (!isAuthorized(ctx)) {
+      await unauthorizedMessage(ctx);
+      return;
+    }
+
+    const chatId = ctx.chat?.id;
+    if (typeof chatId !== "number") {
+      return;
+    }
+
+    const preview = await getMemoryDebugPreview(chatId);
+    await sendResponse(ctx, preview);
+  });
+
+  bot.command("soul", async (ctx) => {
+    if (!isAuthorized(ctx)) {
+      await unauthorizedMessage(ctx);
+      return;
+    }
+
+    const preview = await getSoulPreview();
+    await sendResponse(ctx, preview);
+  });
+
+  bot.command("remember", async (ctx) => {
+    if (!isAuthorized(ctx)) {
+      await unauthorizedMessage(ctx);
+      return;
+    }
+
+    const chatId = ctx.chat?.id;
+    if (typeof chatId !== "number") {
+      return;
+    }
+
+    const rawArgs = commandArgs(ctx);
+    if (!rawArgs) {
+      await ctx.reply("Usage: /remember <text> or /remember chat: <text>");
+      return;
+    }
+
+    let scope: "global" | "chat" = "global";
+    let note = rawArgs;
+
+    if (rawArgs.toLowerCase().startsWith("chat:")) {
+      scope = "chat";
+      note = rawArgs.slice(5).trim();
+    }
+
+    if (!note) {
+      await ctx.reply("Nothing to remember.");
+      return;
+    }
+
+    const added = await rememberNote(chatId, note, scope);
+    await ctx.reply(
+      added
+        ? `Saved to ${scope === "chat" ? "chat memory" : "global memory"}.`
+        : "That note is already stored."
+    );
+  });
+
+  bot.command("forget", async (ctx) => {
+    if (!isAuthorized(ctx)) {
+      await unauthorizedMessage(ctx);
+      return;
+    }
+
+    const chatId = ctx.chat?.id;
+    if (typeof chatId !== "number") {
+      return;
+    }
+
+    const query = commandArgs(ctx);
+    if (!query) {
+      await ctx.reply("Usage: /forget <text>");
+      return;
+    }
+
+    const result = await forgetNotes(chatId, query);
+    const total = result.globalRemoved + result.chatRemoved;
+    await ctx.reply(
+      total > 0
+        ? `Removed ${total} note(s) (${result.globalRemoved} global, ${result.chatRemoved} chat).`
+        : "No matching notes found."
+    );
   });
 
   bot.on("message", async (ctx) => {
@@ -367,9 +494,13 @@ export function createRelayBot(): Bot {
         });
 
         const priorSessionId = await sessions.get(chatId);
-        const memoryContext = await buildSupabasePromptContext(chatId, payload.userContent);
+        const [supabaseContext, localContext] = await Promise.all([
+          buildSupabasePromptContext(chatId, payload.userContent),
+          buildLocalPromptContext(chatId)
+        ]);
+        const mergedMemoryContext = mergeContexts(supabaseContext, localContext);
         const result = await runCodexTurn({
-          prompt: appendLongTermContext(payload.prompt, memoryContext),
+          prompt: appendLongTermContext(payload.prompt, mergedMemoryContext),
           sessionId: priorSessionId,
           imagePaths: payload.imagePaths
         });
@@ -379,21 +510,24 @@ export function createRelayBot(): Bot {
           await sessions.set(chatId, activeSessionId);
         }
 
-        let processedReply = await processMemoryIntents(result.reply);
-        let outgoingReply = processedReply || result.reply || "Codex completed but returned an empty message.";
+        let finalReplyRaw = result.reply || "Codex completed but returned an empty message.";
 
-        if (looksLikeMetaCapabilityReply(outgoingReply) && !asksForCapabilityOrPolicy(payload.userContent)) {
+        if (looksLikeMetaCapabilityReply(finalReplyRaw) && !asksForCapabilityOrPolicy(payload.userContent)) {
           const retry = await runFocusedRetry(payload, activeSessionId);
           activeSessionId = retry.sessionId ?? activeSessionId;
           if (activeSessionId) {
             await sessions.set(chatId, activeSessionId);
           }
 
-          processedReply = await processMemoryIntents(retry.reply);
-          const retriedReply = processedReply || retry.reply;
-          if (retriedReply.trim()) {
-            outgoingReply = retriedReply;
+          if (retry.reply.trim()) {
+            finalReplyRaw = retry.reply;
           }
+        }
+
+        let outgoingReply = await processMemoryIntents(finalReplyRaw);
+        outgoingReply = await processLocalMemoryIntents(chatId, outgoingReply);
+        if (!outgoingReply.trim()) {
+          outgoingReply = "Hotovo.";
         }
 
         await saveChatMessage({
