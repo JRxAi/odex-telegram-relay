@@ -78,6 +78,20 @@ async function sendResponse(ctx: Context, text: string): Promise<void> {
   }
 }
 
+function normalizeTelegramExtension(filePath: string, fallbackExtension: string): string {
+  const raw = path.extname(filePath).toLowerCase();
+  if (!raw) {
+    return `.${fallbackExtension}`;
+  }
+
+  // Telegram voice notes frequently use .oga, but Groq expects .ogg.
+  if (raw === ".oga") {
+    return ".ogg";
+  }
+
+  return raw;
+}
+
 async function downloadTelegramFile(bot: Bot, fileId: string, fallbackExtension: string): Promise<string> {
   const file = await bot.api.getFile(fileId);
   if (!file.file_path) {
@@ -91,7 +105,7 @@ async function downloadTelegramFile(bot: Bot, fileId: string, fallbackExtension:
   }
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-tg-file-"));
-  const extension = path.extname(file.file_path) || `.${fallbackExtension}`;
+  const extension = normalizeTelegramExtension(file.file_path, fallbackExtension);
   const localPath = path.join(tempDir, `payload${extension}`);
   const buffer = Buffer.from(await response.arrayBuffer());
 
